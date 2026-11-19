@@ -1,6 +1,9 @@
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 public class Main {
     public static void main(String[] args) {
@@ -48,6 +51,12 @@ public class Main {
                     case 8:
                         consulterResultatsUI(simulation);
                         break;
+                    case 9:
+                        lancerCourseConcurrenteUI(simulation);
+                        break;
+                    case 10:
+                        lancerCourseAvecPoolUI(simulation);
+                        break;
                     case 0:
                         quitter = true;
                         System.out.println("Fermeture de l'application.");
@@ -76,6 +85,8 @@ public class Main {
         System.out.println("6. Créer et configurer une course");
         System.out.println("7. Démarrer une course");
         System.out.println("8. Consulter les résultats");
+        System.out.println("9. Démarrer une course en mode concurrent");
+        System.out.println("10. Démarrer une course en mode concurrent (Pool de 3 threads)");
         System.out.println("0. Quitter");
         System.out.println("==================================");
     }
@@ -204,4 +215,73 @@ public class Main {
         simulation.configurerCourse("C1", "Grand Prix Automatique", 100.0, participants);
         simulation.lancerSimulation();
     }
+
+    private static void lancerCourseConcurrenteUI(Simulation simulation) {
+    Course course = simulation.getCourseActuelle();
+    if (course == null || !course.estValide()) {
+        System.out.println("Erreur : Veuillez d'abord configurer une course valide (option 6).");
+        return;
+    }
+
+    System.out.println("\n========== COURSE CONCURRENTE ==========");
+    System.out.println("Distance : " + course.getDistanceTotale() + " km\n");
+
+    ClassementPartage classement = new ClassementPartage();
+    List<Thread> threads = new ArrayList<>();
+
+    for (Voiture v : course.getVoituresParticipants()) {
+        VoitureRunnable runnable = new VoitureRunnable(v, course.getDistanceTotale(), 500L, classement);
+        Thread t = new Thread(runnable, "Thread-" + v.getNom());
+        threads.add(t);
+        t.start();
+    }
+
+    // Attendre la fin de tous les threads avant d'afficher le classement final
+    for (Thread t : threads) {
+        try {
+            t.join();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            System.out.println("Attente interrompue pour " + t.getName());
+        }
+    }
+
+    course.setTerminee(true);
+    classement.afficherClassement();
+}
+
+private static void lancerCourseAvecPoolUI(Simulation simulation) {
+    Course course = simulation.getCourseActuelle();
+    if (course == null || !course.estValide()) {
+        System.out.println("Erreur : Veuillez d'abord configurer une course valide (option 6).");
+        return;
+    }
+
+    System.out.println("\n========== COURSE CONCURRENTE (POOL DE 3 THREADS) ==========");
+    System.out.println("Distance : " + course.getDistanceTotale() + " km\n");
+
+    ClassementPartage classement = new ClassementPartage();
+    ExecutorService executor = Executors.newFixedThreadPool(3);
+
+    for (Voiture v : course.getVoituresParticipants()) {
+        VoitureRunnable runnable = new VoitureRunnable(v, course.getDistanceTotale(), 500L, classement);
+        executor.submit(runnable);
+    }
+
+    // Arrêt propre du pool et attente de la fin de toutes les tâches
+    executor.shutdown();
+    try {
+        if (!executor.awaitTermination(5, TimeUnit.MINUTES)) {
+            executor.shutdownNow();
+        }
+    } catch (InterruptedException e) {
+        executor.shutdownNow();
+        Thread.currentThread().interrupt();
+        System.out.println("Exécution du pool interrompue.");
+    }
+
+    course.setTerminee(true);
+    classement.afficherClassement();
+}
+
 }
